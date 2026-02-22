@@ -48,8 +48,6 @@ sheet = client.open_by_key(st.secrets["SHEET_ID"])
 students_sheet = sheet.worksheet("Students_Master")
 payments_sheet = sheet.worksheet("Payments")
 
-update_student_status()
-
 # ---------------- HELPER FUNCTIONS ----------------
 
 def generate_receipt_number():
@@ -92,6 +90,8 @@ def update_student_status():
                 students_sheet.update_cell(idx, 13, "Deactive")  # Status column (13th)
             elif today <= end_date and r["Status"] != "Active":
                 students_sheet.update_cell(idx, 13, "Active")
+
+update_student_status()
 
 # ---------------- FORM ----------------
 
