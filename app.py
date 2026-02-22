@@ -1,6 +1,5 @@
 import streamlit as st
 import gspread
-import uuid
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -12,37 +11,41 @@ from reportlab.lib.pagesizes import A4
 from io import BytesIO
 import pandas as pd
 
-# ===================== SECURE LOGIN =====================
+# ===================== SECURE LOGIN (CRASH PROOF) =====================
 
 def secure_login():
 
     if "authenticated" not in st.session_state:
-        st.session_state["authenticated"] = False
-        st.session_state["login_attempts"] = 0
-        st.session_state["login_time"] = None
+        st.session_state.authenticated = False
 
-    if st.session_state["authenticated"] and st.session_state["login_time"] is not None:
-        if datetime.now() - st.session_state["login_time"] > timedelta(minutes=30):
-            st.session_state["authenticated"] = False
+    if "login_attempts" not in st.session_state:
+        st.session_state.login_attempts = 0
+
+    login_time = st.session_state.get("login_time", None)
+
+    if st.session_state.authenticated and login_time:
+        if datetime.now() - login_time > timedelta(minutes=30):
+            st.session_state.authenticated = False
+            st.session_state.login_time = None
             st.warning("Session Expired. Login Again.")
             st.stop()
 
-    if not st.session_state["authenticated"]:
+    if not st.session_state.authenticated:
 
         password = st.text_input("Enter Password", type="password")
 
         if st.button("Login"):
 
-            if st.session_state["login_attempts"] >= 5:
+            if st.session_state.login_attempts >= 5:
                 st.error("Too many attempts. Restart App.")
                 st.stop()
 
             if password == st.secrets["APP_PASSWORD"]:
-                st.session_state["authenticated"] = True
-                st.session_state["login_time"] = datetime.now()
+                st.session_state.authenticated = True
+                st.session_state.login_time = datetime.now()
                 st.rerun()
             else:
-                st.session_state["login_attempts"] += 1
+                st.session_state.login_attempts += 1
                 st.error("Wrong Password")
 
         st.stop()
@@ -51,8 +54,10 @@ secure_login()
 
 # ===================== GOOGLE SHEETS =====================
 
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
 
 creds = ServiceAccountCredentials.from_json_keyfile_dict(
     st.secrets["sheets"], scope)
@@ -85,7 +90,7 @@ def generate_receipt_number():
     next_no = max(numbers)+1 if numbers else 1
     return f"MA-{year}-{str(next_no).zfill(4)}"
 
-# ===================== PDF =====================
+# ===================== PDF GENERATOR =====================
 
 def generate_pdf(data_dict):
 
@@ -113,7 +118,7 @@ def generate_pdf(data_dict):
 
     return pdf
 
-# ===================== MAIN =====================
+# ===================== MAIN UI =====================
 
 st.title("Murlidhar Academy Professional Fee System")
 
@@ -156,7 +161,6 @@ if menu == "New Payment":
             st.stop()
 
         installment_no = len([p for p in payments if str(p["Student_Phone"]) == phone]) + 1
-
         receipt_no = generate_receipt_number()
 
         payments_sheet.append_row([
