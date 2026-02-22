@@ -1,6 +1,5 @@
 import streamlit as st
 import gspread
-import qrcode
 import uuid
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta
@@ -12,45 +11,45 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from io import BytesIO
 import pandas as pd
-import urllib.parse
 
-# ================== SECURE LOGIN ==================
+# ===================== SECURE LOGIN =====================
 
 def secure_login():
 
     if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-        st.session_state.login_attempts = 0
-        st.session_state.login_time = None
+        st.session_state["authenticated"] = False
+        st.session_state["login_attempts"] = 0
+        st.session_state["login_time"] = None
 
-    if st.session_state.authenticated:
-        if datetime.now() - st.session_state.login_time > timedelta(minutes=30):
-            st.session_state.authenticated = False
+    if st.session_state["authenticated"] and st.session_state["login_time"] is not None:
+        if datetime.now() - st.session_state["login_time"] > timedelta(minutes=30):
+            st.session_state["authenticated"] = False
             st.warning("Session Expired. Login Again.")
             st.stop()
 
-    if not st.session_state.authenticated:
+    if not st.session_state["authenticated"]:
+
         password = st.text_input("Enter Password", type="password")
 
         if st.button("Login"):
-            if st.session_state.login_attempts >= 5:
+
+            if st.session_state["login_attempts"] >= 5:
                 st.error("Too many attempts. Restart App.")
                 st.stop()
 
             if password == st.secrets["APP_PASSWORD"]:
-                st.session_state.authenticated = True
-                st.session_state.login_time = datetime.now()
-                st.success("Login Successful")
+                st.session_state["authenticated"] = True
+                st.session_state["login_time"] = datetime.now()
                 st.rerun()
             else:
-                st.session_state.login_attempts += 1
+                st.session_state["login_attempts"] += 1
                 st.error("Wrong Password")
 
         st.stop()
 
 secure_login()
 
-# ================== GOOGLE SHEET ==================
+# ===================== GOOGLE SHEETS =====================
 
 scope = ["https://spreadsheets.google.com/feeds",
          "https://www.googleapis.com/auth/drive"]
@@ -72,7 +71,7 @@ def get_students():
 def get_payments():
     return payments_sheet.get_all_records()
 
-# ================== RECEIPT NUMBER ==================
+# ===================== RECEIPT NUMBER =====================
 
 def generate_receipt_number():
     payments = get_payments()
@@ -86,21 +85,12 @@ def generate_receipt_number():
     next_no = max(numbers)+1 if numbers else 1
     return f"MA-{year}-{str(next_no).zfill(4)}"
 
-# ================== PDF GENERATOR ==================
+# ===================== PDF =====================
 
 def generate_pdf(data_dict):
 
     buffer = BytesIO()
-
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=30,
-        leftMargin=30,
-        topMargin=50,
-        bottomMargin=50
-    )
-
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
     styles = getSampleStyleSheet()
 
@@ -108,12 +98,9 @@ def generate_pdf(data_dict):
     elements.append(Paragraph("Junagadh | Contact: 9999999999", styles["Normal"]))
     elements.append(Spacer(1, 20))
 
-    table_data = [[k, v] for k, v in data_dict.items()]
-
-    table = Table(table_data, colWidths=[200, 300])
+    table = Table([[k, v] for k, v in data_dict.items()], colWidths=[220, 300])
     table.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
     ]))
 
     elements.append(table)
@@ -126,7 +113,7 @@ def generate_pdf(data_dict):
 
     return pdf
 
-# ================== MAIN APP ==================
+# ===================== MAIN =====================
 
 st.title("Murlidhar Academy Professional Fee System")
 
@@ -135,65 +122,66 @@ menu = st.sidebar.selectbox(
     ["New Payment", "Student Search", "Monthly Dashboard"]
 )
 
-# ================== NEW PAYMENT ==================
+# ===================== NEW PAYMENT =====================
 
 if menu == "New Payment":
 
     st.header("New Payment Entry")
 
-    name = st.text_input("Student Name")
-    phone = st.text_input("Phone (10 digit)")
-    total_fees = st.number_input("Total Course Fees", min_value=0.0)
+    phone = st.text_input("Student Phone (10 digit)")
     payment_amount = st.number_input("Payment Amount", min_value=0.0)
+    payment_mode = st.selectbox("Payment Mode", ["Cash", "UPI", "Bank"])
+    next_due_date = st.date_input("Next Due Date")
 
     if st.button("Generate Receipt"):
 
-        if not phone.isdigit() or len(phone) != 10:
-            st.error("Enter valid 10 digit phone number")
-            st.stop()
-
-        receipt_no = generate_receipt_number()
+        students = get_students()
         payments = get_payments()
 
-        total_paid = sum(float(p["Payment_Amount"])
-                         for p in payments
-                         if str(p["Student_Phone"]) == phone)
+        student = next((s for s in students if str(s["Student_Phone"]) == phone), None)
 
-        remaining = total_fees - total_paid - payment_amount
+        if not student:
+            st.error("Student Not Found in Master Sheet")
+            st.stop()
 
-        if remaining < 0:
+        total_paid_before = sum(float(p["Payment_Amount"])
+                                for p in payments
+                                if str(p["Student_Phone"]) == phone)
+
+        total_fees = float(student["Total_Fees"])
+        remaining_after = total_fees - total_paid_before - payment_amount
+
+        if remaining_after < 0:
             st.error("Payment exceeds remaining amount")
             st.stop()
 
-        # Add student if not exists
-        students = get_students()
-        if not any(str(s["Student_Phone"]) == phone for s in students):
-            students_sheet.append_row([
-                str(uuid.uuid4()),
-                name,
-                phone,
-                total_fees,
-                "Active"
-            ])
+        installment_no = len([p for p in payments if str(p["Student_Phone"]) == phone]) + 1
+
+        receipt_no = generate_receipt_number()
 
         payments_sheet.append_row([
             receipt_no,
+            student["Student_ID"],
             phone,
             datetime.today().strftime("%d-%m-%Y"),
             payment_amount,
-            total_paid + payment_amount,
-            remaining,
+            payment_mode,
+            installment_no,
+            total_paid_before + payment_amount,
+            remaining_after,
+            next_due_date.strftime("%d-%m-%Y"),
             datetime.now().year
         ])
 
         data = {
             "Receipt No": receipt_no,
-            "Student Name": name,
-            "Phone": phone,
+            "Student Name": student["Student_Name"],
+            "Course": student["Course"],
+            "Installment No": installment_no,
             "Paid Now": f"₹{payment_amount}",
-            "Total Paid": f"₹{total_paid + payment_amount}",
-            "Remaining": f"₹{remaining}",
-            "Date": datetime.today().strftime("%d-%m-%Y"),
+            "Total Paid Till Date": f"₹{total_paid_before + payment_amount}",
+            "Remaining": f"₹{remaining_after}",
+            "Next Due Date": next_due_date.strftime("%d-%m-%Y"),
             "Amount in Words": num2words(payment_amount).title() + " Rupees Only"
         }
 
@@ -202,7 +190,7 @@ if menu == "New Payment":
         st.success("Payment Recorded Successfully")
         st.download_button("Download Receipt", pdf, f"{receipt_no}.pdf")
 
-# ================== STUDENT SEARCH ==================
+# ===================== STUDENT SEARCH =====================
 
 elif menu == "Student Search":
 
@@ -220,13 +208,11 @@ elif menu == "Student Search":
         if not student:
             st.error("Student Not Found")
         else:
-            st.success("Student Found")
             st.write(student)
-
             student_payments = [p for p in payments if str(p["Student_Phone"]) == search_phone]
             st.table(student_payments)
 
-# ================== MONTHLY DASHBOARD ==================
+# ===================== MONTHLY DASHBOARD =====================
 
 elif menu == "Monthly Dashboard":
 
@@ -239,7 +225,6 @@ elif menu == "Monthly Dashboard":
     else:
         payments["Payment_Date"] = pd.to_datetime(payments["Payment_Date"], format="%d-%m-%Y")
         payments["Month"] = payments["Payment_Date"].dt.to_period("M")
-
         monthly = payments.groupby("Month")["Payment_Amount"].sum().reset_index()
 
         st.line_chart(monthly.set_index("Month"))
