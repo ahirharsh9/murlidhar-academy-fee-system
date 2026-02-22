@@ -42,7 +42,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
     st.secrets["sheets"], scope)
 
 client = gspread.authorize(creds)
-sheet = client.open(st.secrets["SHEET_NAME"])
+sheet = client.open_by_key(st.secrets["12N4eIBNqW9GGeic8AbuoVfhWmX1mKdhX8lGRJb0S-CA"])
 
 students_sheet = sheet.worksheet("Students_Master")
 payments_sheet = sheet.worksheet("Payments")
