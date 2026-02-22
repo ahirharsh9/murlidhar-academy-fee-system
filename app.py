@@ -53,7 +53,7 @@ sheet = client.open_by_key(st.secrets["SHEET_ID"])
 students_sheet = sheet.worksheet("Students_Master")
 payments_sheet = sheet.worksheet("Payments")
 
-# ---------------- HELPER FUNCTIONS ----------------
+# ---------------- HELPERS ----------------
 
 def generate_receipt_number():
     records = payments_sheet.get_all_records()
@@ -65,15 +65,12 @@ def generate_receipt_number():
 
     last_receipt = year_records[-1]["Receipt_No"]
     last_number = int(last_receipt.split("-")[-1])
-    new_number = str(last_number + 1).zfill(4)
-    return f"MA-{current_year}-{new_number}"
+    return f"MA-{current_year}-{str(last_number+1).zfill(4)}"
 
 def get_student(phone):
     records = students_sheet.get_all_records()
-    phone = str(phone).strip()
-
     for r in records:
-        if str(r["Student_Phone"]).strip() == phone:
+        if str(r["Student_Phone"]).strip() == str(phone).strip():
             return r
     return None
 
@@ -84,15 +81,11 @@ def calculate_total_paid(phone):
 def update_student_status():
     records = students_sheet.get_all_records()
     today = datetime.today()
-
     for idx, r in enumerate(records, start=2):
-        end_date_str = r["Course_End_Date"]
-        if end_date_str:
-            end_date = datetime.strptime(end_date_str, "%d-%m-%Y")
-            if today > end_date:
-                students_sheet.update_cell(idx, 13, "Deactive")
-            else:
-                students_sheet.update_cell(idx, 13, "Active")
+        if r["Course_End_Date"]:
+            end_date = datetime.strptime(r["Course_End_Date"], "%d-%m-%Y")
+            status = "Active" if today <= end_date else "Deactive"
+            students_sheet.update_cell(idx, 13, status)
 
 update_student_status()
 
@@ -120,11 +113,11 @@ if menu == "New Payment":
 
     if st.button("Generate Receipt"):
 
-        existing_student = get_student(phone)
+        existing = get_student(phone)
 
-        if existing_student:
+        if existing:
             total_paid = calculate_total_paid(phone)
-            remaining = float(existing_student["Total_Fees"]) - total_paid
+            remaining = float(existing["Total_Fees"]) - total_paid
             installment_no = len([r for r in payments_sheet.get_all_records() if str(r["Student_Phone"]) == str(phone)]) + 1
         else:
             total_paid = 0
@@ -139,10 +132,9 @@ if menu == "New Payment":
         total_paid += payment_amount
         remaining -= payment_amount
 
-        if not existing_student:
+        if not existing:
             start_date = payment_date
             end_date = start_date + relativedelta(months=duration)
-
             students_sheet.append_row([
                 f"STU-{phone[-4:]}",
                 name,
@@ -173,8 +165,7 @@ if menu == "New Payment":
             today.year
         ])
 
-        # -------- PDF --------
-
+        # PDF
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4)
         elements = []
@@ -200,43 +191,21 @@ if menu == "New Payment":
         ]
 
         table = Table(data, colWidths=[200, 300])
-        table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 1, colors.grey),
-        ]))
-
+        table.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.grey)]))
         elements.append(table)
         elements.append(Spacer(1, 30))
 
-        qr_data = f"""
-Receipt: {receipt_no}
-Student: {name}
-Phone: {phone}
-Course: {course}
-Total Fees: {total_fees}
-Paid: {payment_amount}
-Remaining: {remaining}
-Date: {payment_date.strftime("%d-%m-%Y")}
-"""
-
+        qr_data = f"Receipt: {receipt_no}\nStudent: {name}\nRemaining: {remaining}"
         qr = qrcode.make(qr_data)
         qr_buffer = BytesIO()
         qr.save(qr_buffer)
         qr_buffer.seek(0)
-
-        qr_image = Image(qr_buffer, width=120, height=120)
-        elements.append(qr_image)
+        elements.append(Image(qr_buffer, width=120, height=120))
 
         doc.build(elements)
-
         pdf = buffer.getvalue()
-        buffer.close()
 
-        st.download_button(
-            "Download Professional Receipt",
-            pdf,
-            file_name=f"{receipt_no}.pdf",
-            mime="application/pdf"
-        )
+        st.download_button("Download Receipt", pdf, f"{receipt_no}.pdf")
 
 # =====================================================
 # ================= STUDENT SEARCH ====================
@@ -246,7 +215,7 @@ elif menu == "Student Search":
 
     st.header("Student Search")
 
-    search_phone = st.text_input("Enter Student Phone Number")
+    search_phone = st.text_input("Enter Student Phone")
 
     if st.button("Search"):
 
@@ -255,7 +224,6 @@ elif menu == "Student Search":
         if not student:
             st.error("Student Not Found")
         else:
-            st.subheader("Student Details")
             st.write(student)
 
             payments = payments_sheet.get_all_records()
@@ -271,22 +239,27 @@ elif menu == "Student Search":
             st.success(f"Total Paid: ₹{total_paid}")
             st.warning(f"Remaining: ₹{remaining}")
 
+            if remaining > 0:
+                msg = f"Hello {student['Student_Name']},\nRemaining Fees: ₹{remaining}"
+                url = f"https://wa.me/91{search_phone}?text={urllib.parse.quote(msg)}"
+                st.markdown(f"[Send WhatsApp Reminder]({url})")
+
 # =====================================================
 # ================= ALL TIME REPORT ===================
 # =====================================================
 
 elif menu == "All-Time Report":
 
-    st.header("All-Time Report")
-
     students = students_sheet.get_all_records()
     payments = payments_sheet.get_all_records()
 
     total_collection = sum(float(p["Payment_Amount"]) for p in payments)
 
-    st.subheader("Total Collection")
-    st.success(f"₹ {total_collection}")
+    total_students = len(students)
+    active_students = len([s for s in students if s["Status"] == "Active"])
+    deactive_students = total_students - active_students
 
+    total_pending = 0
     report_data = []
 
     for student in students:
@@ -294,15 +267,28 @@ elif menu == "All-Time Report":
         total_paid = sum(float(p["Payment_Amount"]) for p in payments if str(p["Student_Phone"]) == str(phone))
         total_fees = float(student["Total_Fees"])
         remaining = total_fees - total_paid
+        total_pending += remaining
 
         report_data.append({
             "Name": student["Student_Name"],
             "Phone": phone,
             "Course": student["Course"],
-            "Total Fees": total_fees,
             "Paid": total_paid,
             "Remaining": remaining,
             "Status": student["Status"]
         })
 
+    st.subheader("Dashboard Summary")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Students", total_students)
+    col2.metric("Active Students", active_students)
+    col3.metric("Total Collection", f"₹{total_collection}")
+
+    st.metric("Total Pending Amount", f"₹{total_pending}")
+
+    st.subheader("All Students")
     st.table(report_data)
+
+    st.subheader("Pending Students Only")
+    pending_only = [r for r in report_data if r["Remaining"] > 0]
+    st.table(pending_only)
