@@ -1,1 +1,8 @@
-
+streamlit
+gspread
+oauth2client
+reportlab
+num2words
+qrcode
+Pillow
+python-dateutil
