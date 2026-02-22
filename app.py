@@ -69,8 +69,11 @@ def generate_receipt_number():
 
 def get_student(phone):
     records = students_sheet.get_all_records()
+    phone = str(phone).strip()
+
     for r in records:
-        if r["Student_Phone"] == phone:
+        sheet_phone = str(r["Student_Phone"]).strip()
+        if sheet_phone == phone:
             return r
     return None
 
@@ -175,7 +178,7 @@ if st.button("Generate Receipt"):
 
 
 
-if menu == "Student Search":
+elif menu == "Student Search":
 
     st.header("Student Search")
 
@@ -183,7 +186,7 @@ if menu == "Student Search":
 
     if st.button("Search"):
 
-        student = get_student(search_phone)
+        student = get_student(search_phone.strip())
 
         if not student:
             st.error("Student Not Found")
@@ -209,7 +212,7 @@ if menu == "Student Search":
 
 
 
-if menu == "All-Time Report":
+elif menu == "All-Time Report":
 
     st.header("All-Time Report")
 
