@@ -152,60 +152,73 @@ if st.button("Generate Receipt"):
         today.year
     ])
 
-    # -------- PDF --------
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    elements = []
-    styles = getSampleStyleSheet()
+    # -------- PROFESSIONAL PDF --------
 
-    elements.append(Paragraph("<b>MURLIDHAR ACADEMY</b>", styles["Title"]))
-    elements.append(Spacer(1, 20))
+buffer = BytesIO()
+doc = SimpleDocTemplate(buffer, pagesize=A4)
+elements = []
+styles = getSampleStyleSheet()
 
-    data = [
-        ["Receipt No", receipt_no],
-        ["Student Name", name],
-        ["Phone", phone],
-        ["Course", course],
-        ["Installment No", installment_no],
-        ["Total Fees", f"₹{total_fees}"],
-        ["Paid Now", f"₹{payment_amount}"],
-        ["Total Paid", f"₹{total_paid}"],
-        ["Remaining", f"₹{remaining}"],
-        ["Next Due Date", due_date.strftime("%d-%m-%Y")]
-    ]
+elements.append(Paragraph("<b>MURLIDHAR ACADEMY</b>", styles["Title"]))
+elements.append(Spacer(1, 20))
 
-    table = Table(data, colWidths=[200, 250])
-    table.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 1, colors.black)
-    ]))
+amount_words = num2words(payment_amount, to='cardinal', lang='en').title()
 
-    elements.append(table)
-    doc.build(elements)
+data = [
+    ["Receipt No", receipt_no],
+    ["Student Name", name],
+    ["Phone", phone],
+    ["Course", course],
+    ["Installment No", installment_no],
+    ["Total Fees", f"₹{total_fees}"],
+    ["Paid Now", f"₹{payment_amount}"],
+    ["Total Paid", f"₹{total_paid}"],
+    ["Remaining", f"₹{remaining}"],
+    ["Next Due Date", due_date.strftime("%d-%m-%Y")],
+    ["Amount in Words", amount_words + " Rupees Only"]
+]
 
-    pdf = buffer.getvalue()
-    buffer.close()
+table = Table(data, colWidths=[200, 300])
+table.setStyle(TableStyle([
+    ('GRID', (0,0), (-1,-1), 1, colors.grey),
+    ('BACKGROUND', (0,0), (-1,0), colors.whitesmoke),
+    ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
+]))
 
-    st.download_button(
-        "Download Receipt",
-        pdf,
-        file_name=f"{receipt_no}.pdf",
-        mime="application/pdf"
-    )
+elements.append(table)
+elements.append(Spacer(1, 30))
 
-    message = f"""
-Hello {name},
+# -------- QR CODE --------
 
-Receipt No: {receipt_no}
-Total Fees: ₹{total_fees}
-Paid: ₹{payment_amount}
-Remaining: ₹{remaining}
-Next Due Date: {due_date.strftime("%d-%m-%Y")}
-
-Regards,
-Murlidhar Academy
+qr_data = f"""
+Receipt: {receipt_no}
+Student: {name}
+Phone: {phone}
+Course: {course}
+Total Fees: {total_fees}
+Paid: {payment_amount}
+Remaining: {remaining}
+Date: {payment_date.strftime("%d-%m-%Y")}
 """
 
-    encoded = urllib.parse.quote(message)
-    st.markdown(f"[Send to WhatsApp](https://wa.me/91{phone}?text={encoded})")
+qr = qrcode.make(qr_data)
+qr_buffer = BytesIO()
+qr.save(qr_buffer)
+qr_buffer.seek(0)
 
-    st.success("Receipt Generated Successfully")
+qr_image = Image(qr_buffer, width=120, height=120)
+elements.append(Paragraph("Scan for Verification", styles["Normal"]))
+elements.append(Spacer(1, 10))
+elements.append(qr_image)
+
+doc.build(elements)
+
+pdf = buffer.getvalue()
+buffer.close()
+
+st.download_button(
+    "Download Professional Receipt",
+    pdf,
+    file_name=f"{receipt_no}.pdf",
+    mime="application/pdf"
+)
