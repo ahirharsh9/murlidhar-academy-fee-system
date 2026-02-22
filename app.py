@@ -31,6 +31,10 @@ def check_login():
 check_login()
 
 st.title("Murlidhar Academy Fee System")
+menu = st.sidebar.selectbox(
+    "Select Option",
+    ["New Payment", "Student Search", "All-Time Report"]
+)
 
 # ---------------- GOOGLE SHEET ----------------
 
@@ -95,6 +99,7 @@ update_student_status()
 
 # ---------------- FORM ----------------
 
+if menu == "New Payment":
 st.header("New Payment Entry")
 
 name = st.text_input("Student Name")
@@ -166,6 +171,82 @@ if st.button("Generate Receipt"):
         today.year
     ])
 
+
+
+
+
+if menu == "Student Search":
+
+    st.header("Student Search")
+
+    search_phone = st.text_input("Enter Student Phone Number")
+
+    if st.button("Search"):
+
+        student = get_student(search_phone)
+
+        if not student:
+            st.error("Student Not Found")
+        else:
+            st.subheader("Student Details")
+            st.write(student)
+
+            payments = payments_sheet.get_all_records()
+            student_payments = [p for p in payments if p["Student_Phone"] == search_phone]
+
+            st.subheader("Payment History")
+            st.table(student_payments)
+
+            total_paid = sum(float(p["Payment_Amount"]) for p in student_payments)
+            total_fees = float(student["Total_Fees"])
+            remaining = total_fees - total_paid
+
+            st.markdown(f"**Total Paid:** ₹{total_paid}")
+            st.markdown(f"**Remaining:** ₹{remaining}")
+
+
+
+
+
+
+if menu == "All-Time Report":
+
+    st.header("All-Time Report")
+
+    students = students_sheet.get_all_records()
+    payments = payments_sheet.get_all_records()
+
+    total_collection = sum(float(p["Payment_Amount"]) for p in payments)
+
+    st.subheader("Total Collection")
+    st.success(f"₹ {total_collection}")
+
+    report_data = []
+
+    for student in students:
+        phone = student["Student_Phone"]
+        total_paid = sum(float(p["Payment_Amount"]) for p in payments if p["Student_Phone"] == phone)
+        total_fees = float(student["Total_Fees"])
+        remaining = total_fees - total_paid
+
+        report_data.append({
+            "Name": student["Student_Name"],
+            "Phone": phone,
+            "Course": student["Course"],
+            "Total Fees": total_fees,
+            "Paid": total_paid,
+            "Remaining": remaining,
+            "Status": student["Status"]
+        })
+
+    st.table(report_data)
+
+    
+
+
+
+    
+    
     # -------- PROFESSIONAL PDF --------
 
     buffer = BytesIO()
