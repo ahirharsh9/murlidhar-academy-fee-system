@@ -48,6 +48,8 @@ sheet = client.open_by_key(st.secrets["SHEET_ID"])
 students_sheet = sheet.worksheet("Students_Master")
 payments_sheet = sheet.worksheet("Payments")
 
+update_student_status()
+
 # ---------------- HELPER FUNCTIONS ----------------
 
 def generate_receipt_number():
@@ -77,6 +79,19 @@ def calculate_total_paid(phone):
         if r["Student_Phone"] == phone:
             total += float(r["Payment_Amount"])
     return total
+
+def update_student_status():
+    records = students_sheet.get_all_records()
+    today = datetime.today()
+
+    for idx, r in enumerate(records, start=2):  # row 2 thi start
+        end_date_str = r["Course_End_Date"]
+        if end_date_str:
+            end_date = datetime.strptime(end_date_str, "%d-%m-%Y")
+            if today > end_date and r["Status"] != "Deactive":
+                students_sheet.update_cell(idx, 13, "Deactive")  # Status column (13th)
+            elif today <= end_date and r["Status"] != "Active":
+                students_sheet.update_cell(idx, 13, "Active")
 
 # ---------------- FORM ----------------
 
