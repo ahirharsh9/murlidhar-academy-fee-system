@@ -117,7 +117,6 @@ if st.button("Generate Receipt"):
     total_paid += payment_amount
     remaining -= payment_amount
 
-    # Save new student if not exist
     if not existing_student:
         start_date = payment_date
         end_date = start_date + relativedelta(months=duration)
@@ -138,7 +137,6 @@ if st.button("Generate Receipt"):
             "Active"
         ])
 
-    # Save payment
     payments_sheet.append_row([
         receipt_no,
         f"STU-{phone[-4:]}",
@@ -155,43 +153,41 @@ if st.button("Generate Receipt"):
 
     # -------- PROFESSIONAL PDF --------
 
-buffer = BytesIO()
-doc = SimpleDocTemplate(buffer, pagesize=A4)
-elements = []
-styles = getSampleStyleSheet()
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    elements = []
+    styles = getSampleStyleSheet()
 
-elements.append(Paragraph("<b>MURLIDHAR ACADEMY</b>", styles["Title"]))
-elements.append(Spacer(1, 20))
+    elements.append(Paragraph("<b>MURLIDHAR ACADEMY</b>", styles["Title"]))
+    elements.append(Spacer(1, 20))
 
-amount_words = num2words(payment_amount, to='cardinal', lang='en').title()
+    amount_words = num2words(payment_amount, to='cardinal', lang='en').title()
 
-data = [
-    ["Receipt No", receipt_no],
-    ["Student Name", name],
-    ["Phone", phone],
-    ["Course", course],
-    ["Installment No", installment_no],
-    ["Total Fees", f"₹{total_fees}"],
-    ["Paid Now", f"₹{payment_amount}"],
-    ["Total Paid", f"₹{total_paid}"],
-    ["Remaining", f"₹{remaining}"],
-    ["Next Due Date", due_date.strftime("%d-%m-%Y")],
-    ["Amount in Words", amount_words + " Rupees Only"]
-]
+    data = [
+        ["Receipt No", receipt_no],
+        ["Student Name", name],
+        ["Phone", phone],
+        ["Course", course],
+        ["Installment No", installment_no],
+        ["Total Fees", f"₹{total_fees}"],
+        ["Paid Now", f"₹{payment_amount}"],
+        ["Total Paid", f"₹{total_paid}"],
+        ["Remaining", f"₹{remaining}"],
+        ["Next Due Date", due_date.strftime("%d-%m-%Y")],
+        ["Amount in Words", amount_words + " Rupees Only"]
+    ]
 
-table = Table(data, colWidths=[200, 300])
-table.setStyle(TableStyle([
-    ('GRID', (0,0), (-1,-1), 1, colors.grey),
-    ('BACKGROUND', (0,0), (-1,0), colors.whitesmoke),
-    ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
-]))
+    table = Table(data, colWidths=[200, 300])
+    table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 1, colors.grey),
+    ]))
 
-elements.append(table)
-elements.append(Spacer(1, 30))
+    elements.append(table)
+    elements.append(Spacer(1, 30))
 
-# -------- QR CODE --------
+    # -------- QR CODE --------
 
-qr_data = f"""
+    qr_data = f"""
 Receipt: {receipt_no}
 Student: {name}
 Phone: {phone}
@@ -202,24 +198,24 @@ Remaining: {remaining}
 Date: {payment_date.strftime("%d-%m-%Y")}
 """
 
-qr = qrcode.make(qr_data)
-qr_buffer = BytesIO()
-qr.save(qr_buffer)
-qr_buffer.seek(0)
+    qr = qrcode.make(qr_data)
+    qr_buffer = BytesIO()
+    qr.save(qr_buffer)
+    qr_buffer.seek(0)
 
-qr_image = Image(qr_buffer, width=120, height=120)
-elements.append(Paragraph("Scan for Verification", styles["Normal"]))
-elements.append(Spacer(1, 10))
-elements.append(qr_image)
+    qr_image = Image(qr_buffer, width=120, height=120)
+    elements.append(Paragraph("Scan for Verification", styles["Normal"]))
+    elements.append(Spacer(1, 10))
+    elements.append(qr_image)
 
-doc.build(elements)
+    doc.build(elements)
 
-pdf = buffer.getvalue()
-buffer.close()
+    pdf = buffer.getvalue()
+    buffer.close()
 
-st.download_button(
-    "Download Professional Receipt",
-    pdf,
-    file_name=f"{receipt_no}.pdf",
-    mime="application/pdf"
-)
+    st.download_button(
+        "Download Professional Receipt",
+        pdf,
+        file_name=f"{receipt_no}.pdf",
+        mime="application/pdf"
+    )
