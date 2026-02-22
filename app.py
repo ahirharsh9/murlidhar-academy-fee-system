@@ -1,21 +1,17 @@
 import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime, timedelta
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from num2words import num2words
-import qrcode
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
-from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
-from reportlab.lib import styles
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
 from io import BytesIO
 import urllib.parse
 
-# ---------------- PASSWORD LOGIN ----------------
+# ---------------- LOGIN ----------------
 
 def check_login():
     if "authenticated" not in st.session_state:
@@ -35,10 +31,12 @@ check_login()
 
 st.title("Murlidhar Academy Fee System")
 
-# ---------------- GOOGLE SHEET CONNECTION ----------------
+# ---------------- GOOGLE SHEET ----------------
 
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
 
 creds = ServiceAccountCredentials.from_json_keyfile_dict(
     st.secrets["sheets"], scope)
@@ -48,6 +46,36 @@ sheet = client.open(st.secrets["SHEET_NAME"])
 
 students_sheet = sheet.worksheet("Students_Master")
 payments_sheet = sheet.worksheet("Payments")
+
+# ---------------- HELPER FUNCTIONS ----------------
+
+def generate_receipt_number():
+    records = payments_sheet.get_all_records()
+    current_year = datetime.now().year
+    year_records = [r for r in records if str(current_year) in str(r["Year"])]
+
+    if not year_records:
+        return f"MA-{current_year}-0001"
+
+    last_receipt = year_records[-1]["Receipt_No"]
+    last_number = int(last_receipt.split("-")[-1])
+    new_number = str(last_number + 1).zfill(4)
+    return f"MA-{current_year}-{new_number}"
+
+def get_student(phone):
+    records = students_sheet.get_all_records()
+    for r in records:
+        if r["Student_Phone"] == phone:
+            return r
+    return None
+
+def calculate_total_paid(phone):
+    records = payments_sheet.get_all_records()
+    total = 0
+    for r in records:
+        if r["Student_Phone"] == phone:
+            total += float(r["Payment_Amount"])
+    return total
 
 # ---------------- FORM ----------------
 
@@ -59,8 +87,8 @@ parent_phone = st.text_input("Parent Phone")
 address = st.text_area("Address")
 course = st.text_input("Course Name")
 duration = st.number_input("Course Duration (Months)", min_value=1)
-total_fees = st.number_input("Total Course Fees", min_value=0)
-payment_amount = st.number_input("Payment Amount", min_value=0)
+total_fees = st.number_input("Total Course Fees", min_value=0.0)
+payment_amount = st.number_input("Payment Amount", min_value=0.0)
 mode = st.selectbox("Payment Mode", ["Cash", "UPI", "Bank"])
 
 today = datetime.today()
@@ -69,88 +97,101 @@ due_date = st.date_input("Next Installment Due Date", today + relativedelta(mont
 
 if st.button("Generate Receipt"):
 
-    if payment_amount > total_fees:
-        st.error("Payment cannot exceed total fees.")
+    existing_student = get_student(phone)
+
+    if existing_student:
+        total_paid = calculate_total_paid(phone)
+        remaining = float(existing_student["Total_Fees"]) - total_paid
+        installment_no = len([r for r in payments_sheet.get_all_records() if r["Student_Phone"] == phone]) + 1
+    else:
+        total_paid = 0
+        remaining = total_fees
+        installment_no = 1
+
+    if payment_amount > remaining:
+        st.error("Payment cannot exceed remaining fees.")
         st.stop()
 
-    receipt_no = f"MA-{today.year}-001"
+    receipt_no = generate_receipt_number()
+    total_paid += payment_amount
+    remaining -= payment_amount
 
-    total_paid = payment_amount
-    remaining = total_fees - total_paid
+    # Save new student if not exist
+    if not existing_student:
+        start_date = payment_date
+        end_date = start_date + relativedelta(months=duration)
 
-    # Save to Google Sheet (Simple initial version)
-    students_sheet.append_row([
-        "STU-001",
-        name,
-        phone,
-        parent_phone,
-        address,
-        course,
-        "",
-        total_fees,
-        duration,
-        payment_date.strftime("%d-%m-%Y"),
-        (payment_date + relativedelta(months=duration)).strftime("%d-%m-%Y"),
-        payment_date.strftime("%d-%m-%Y"),
-        "Active"
-    ])
+        students_sheet.append_row([
+            f"STU-{phone[-4:]}",
+            name,
+            phone,
+            parent_phone,
+            address,
+            course,
+            "",
+            total_fees,
+            duration,
+            start_date.strftime("%d-%m-%Y"),
+            end_date.strftime("%d-%m-%Y"),
+            start_date.strftime("%d-%m-%Y"),
+            "Active"
+        ])
 
+    # Save payment
     payments_sheet.append_row([
         receipt_no,
-        "STU-001",
+        f"STU-{phone[-4:]}",
         phone,
         payment_date.strftime("%d-%m-%Y"),
         payment_amount,
         mode,
-        1,
+        installment_no,
         total_paid,
         remaining,
         due_date.strftime("%d-%m-%Y"),
         today.year
     ])
 
-    # ----------- GENERATE PDF -----------
-
+    # -------- PDF --------
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
+    styles = getSampleStyleSheet()
 
-    style = styles.getSampleStyleSheet()
-
-    elements.append(Paragraph("<b>MURLIDHAR ACADEMY</b>", style['Title']))
-    elements.append(Spacer(1, 12))
+    elements.append(Paragraph("<b>MURLIDHAR ACADEMY</b>", styles["Title"]))
+    elements.append(Spacer(1, 20))
 
     data = [
-        ["Student Name:", name],
-        ["Phone:", phone],
-        ["Course:", course],
-        ["Installment:", "1"],
-        ["Total Fees:", f"₹{total_fees}"],
-        ["Paid:", f"₹{payment_amount}"],
-        ["Remaining:", f"₹{remaining}"],
-        ["Due Date:", due_date.strftime("%d-%m-%Y")]
+        ["Receipt No", receipt_no],
+        ["Student Name", name],
+        ["Phone", phone],
+        ["Course", course],
+        ["Installment No", installment_no],
+        ["Total Fees", f"₹{total_fees}"],
+        ["Paid Now", f"₹{payment_amount}"],
+        ["Total Paid", f"₹{total_paid}"],
+        ["Remaining", f"₹{remaining}"],
+        ["Next Due Date", due_date.strftime("%d-%m-%Y")]
     ]
 
-    table = Table(data)
+    table = Table(data, colWidths=[200, 250])
     table.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 1, colors.black)
     ]))
 
     elements.append(table)
-
     doc.build(elements)
 
     pdf = buffer.getvalue()
     buffer.close()
 
     st.download_button(
-        label="Download Receipt PDF",
-        data=pdf,
-        file_name="receipt.pdf",
+        "Download Receipt",
+        pdf,
+        file_name=f"{receipt_no}.pdf",
         mime="application/pdf"
     )
 
-    # WhatsApp Message
     message = f"""
 Hello {name},
 
@@ -158,15 +199,13 @@ Receipt No: {receipt_no}
 Total Fees: ₹{total_fees}
 Paid: ₹{payment_amount}
 Remaining: ₹{remaining}
-Due Date: {due_date.strftime("%d-%m-%Y")}
+Next Due Date: {due_date.strftime("%d-%m-%Y")}
 
 Regards,
 Murlidhar Academy
 """
 
     encoded = urllib.parse.quote(message)
-    whatsapp_url = f"https://wa.me/91{phone}?text={encoded}"
-
-    st.markdown(f"[Send to Student WhatsApp]({whatsapp_url})")
+    st.markdown(f"[Send to WhatsApp](https://wa.me/91{phone}?text={encoded})")
 
     st.success("Receipt Generated Successfully")
