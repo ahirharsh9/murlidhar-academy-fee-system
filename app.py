@@ -1,21 +1,21 @@
 import streamlit as st
 import gspread
 import uuid
+import urllib.parse
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from num2words import num2words
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
 from io import BytesIO
 import pandas as pd
 
-# ===================== SECURE LOGIN =====================
+# ================= LOGIN =================
 
 def secure_login():
-
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
@@ -41,7 +41,7 @@ def secure_login():
 
 secure_login()
 
-# ===================== GOOGLE SHEETS =====================
+# ================= GOOGLE SHEET =================
 
 scope = ["https://spreadsheets.google.com/feeds",
          "https://www.googleapis.com/auth/drive"]
@@ -63,30 +63,41 @@ def get_students():
 def get_payments():
     return payments_sheet.get_all_records()
 
-# ===================== RECEIPT NUMBER =====================
+# ================= RECEIPT NUMBER =================
 
 def generate_receipt_number():
     payments = get_payments()
     year = datetime.now().year
-    numbers = [int(p["Receipt_No"].split("-")[-1])
-               for p in payments if str(p["Year"]) == str(year)]
-    next_no = max(numbers)+1 if numbers else 1
+    nums = [int(p["Receipt_No"].split("-")[-1])
+            for p in payments if str(p["Year"]) == str(year)]
+    next_no = max(nums)+1 if nums else 1
     return f"MA-{year}-{str(next_no).zfill(4)}"
 
-# ===================== PDF =====================
+# ================= BRANDED PDF =================
 
-def generate_pdf(data_dict):
+def generate_pdf(data):
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
     styles = getSampleStyleSheet()
 
-    elements.append(Paragraph("<b>MURLIDHAR ACADEMY</b>", styles["Title"]))
+    header_style = ParagraphStyle(
+        name='Header',
+        parent=styles['Title'],
+        textColor=colors.white,
+        backColor=colors.red
+    )
+
+    elements.append(Paragraph("MURLIDHAR ACADEMY", header_style))
+    elements.append(Paragraph("Junagadh | Contact: 9999999999", styles["Normal"]))
     elements.append(Spacer(1, 20))
 
-    table = Table([[k, v] for k, v in data_dict.items()], colWidths=[220, 300])
-    table.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.grey)]))
+    table = Table([[k, v] for k, v in data.items()], colWidths=[220, 300])
+    table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 1, colors.red),
+        ('BACKGROUND', (0,0), (-1,0), colors.yellow)
+    ]))
 
     elements.append(table)
     elements.append(Spacer(1, 40))
@@ -97,65 +108,54 @@ def generate_pdf(data_dict):
     buffer.close()
     return pdf
 
-# ===================== MAIN =====================
+# ================= MAIN =================
 
-st.title("Murlidhar Academy Fee System")
+st.title("Murlidhar Academy Fee System 2.0")
 
-menu = st.sidebar.selectbox("Select Option",
-                            ["New Payment / Admission",
-                             "Student Search",
-                             "Monthly Dashboard"])
+menu = st.sidebar.selectbox(
+    "Select Option",
+    ["Admission / Payment", "All-Time Dashboard"]
+)
 
-# ===================== NEW PAYMENT / ADMISSION =====================
+# ================= ADMISSION / PAYMENT =================
 
-if menu == "New Payment / Admission":
+if menu == "Admission / Payment":
 
-    st.header("Student Payment System")
-
-    phone = st.text_input("Student Phone (10 digit)")
+    phone = st.text_input("Student Phone")
 
     students = get_students()
     payments = get_payments()
 
     student = next((s for s in students if str(s["Student_Phone"]) == phone), None)
 
-    # -------- IF NEW STUDENT --------
+    # NEW STUDENT
     if phone and not student:
 
-        st.subheader("New Admission Form")
+        st.subheader("New Admission")
 
         name = st.text_input("Student Name")
-        parent_phone = st.text_input("Parent Phone")
+        parent = st.text_input("Parent Phone")
         address = st.text_area("Address")
         course = st.text_input("Course")
         batch = st.text_input("Batch")
         total_fees = st.number_input("Total Fees", min_value=0.0)
-        duration = st.number_input("Course Duration (Months)", min_value=1)
-        start_date = st.date_input("Course Start Date")
-
+        duration = st.number_input("Duration (Months)", min_value=1)
+        start_date = st.date_input("Start Date")
         payment_amount = st.number_input("First Payment", min_value=0.0)
-        payment_mode = st.selectbox("Payment Mode", ["Cash", "UPI", "Bank"])
-        next_due_date = st.date_input("Next Due Date")
+        payment_mode = st.selectbox("Mode", ["Cash","UPI","Bank"])
+        next_due = st.date_input("Next Due Date")
 
-        if st.button("Create Admission & Generate Receipt"):
+        if st.button("Create Admission"):
 
             student_id = "STU-" + str(uuid.uuid4())[:8]
             end_date = start_date + relativedelta(months=duration)
-            admission_date = datetime.today()
 
             students_sheet.append_row([
-                student_id,
-                name,
-                phone,
-                parent_phone,
-                address,
-                course,
-                batch,
-                total_fees,
-                duration,
+                student_id,name,phone,parent,address,course,batch,
+                total_fees,duration,
                 start_date.strftime("%d-%m-%Y"),
                 end_date.strftime("%d-%m-%Y"),
-                admission_date.strftime("%d-%m-%Y"),
+                datetime.today().strftime("%d-%m-%Y"),
                 "Active"
             ])
 
@@ -163,96 +163,117 @@ if menu == "New Payment / Admission":
             receipt_no = generate_receipt_number()
 
             payments_sheet.append_row([
-                receipt_no,
-                student_id,
-                phone,
-                admission_date.strftime("%d-%m-%Y"),
-                payment_amount,
-                payment_mode,
-                1,
-                payment_amount,
-                remaining,
-                next_due_date.strftime("%d-%m-%Y"),
+                receipt_no,student_id,phone,
+                datetime.today().strftime("%d-%m-%Y"),
+                payment_amount,payment_mode,1,
+                payment_amount,remaining,
+                next_due.strftime("%d-%m-%Y"),
                 datetime.now().year
             ])
 
             pdf = generate_pdf({
                 "Receipt No": receipt_no,
                 "Student Name": name,
-                "Course": course,
-                "Paid Now": f"₹{payment_amount}",
+                "Paid": f"₹{payment_amount}",
                 "Remaining": f"₹{remaining}",
-                "Amount in Words": num2words(payment_amount).title() + " Rupees Only"
+                "Amount in Words": num2words(payment_amount).title()+" Rupees Only"
             })
 
-            st.success("Admission Created Successfully")
+            st.success("Admission Created")
             st.download_button("Download Receipt", pdf, f"{receipt_no}.pdf")
 
-    # -------- EXISTING STUDENT --------
+            msg = f"Hello {name}, Payment of ₹{payment_amount} received. Receipt No: {receipt_no}"
+            wa = f"https://wa.me/91{phone}?text={urllib.parse.quote(msg)}"
+            st.markdown(f"[Send Payment Confirmation WhatsApp]({wa})")
+
+    # EXISTING STUDENT
     elif student:
 
-        st.success("Existing Student Found")
+        st.success("Student Found")
         st.write(student)
 
-        total_paid_before = sum(float(p["Payment_Amount"])
-                                for p in payments
-                                if str(p["Student_Phone"]) == phone)
+        total_paid = sum(float(p["Payment_Amount"])
+                         for p in payments if str(p["Student_Phone"])==phone)
 
         total_fees = float(student["Total_Fees"])
-        remaining_before = total_fees - total_paid_before
+        remaining = total_fees - total_paid
 
-        st.info(f"Remaining Before Payment: ₹{remaining_before}")
+        st.info(f"Remaining: ₹{remaining}")
 
-        payment_amount = st.number_input("Payment Amount", min_value=0.0)
-        payment_mode = st.selectbox("Payment Mode", ["Cash", "UPI", "Bank"])
-        next_due_date = st.date_input("Next Due Date")
+        pay = st.number_input("Payment Amount", min_value=0.0)
+        mode = st.selectbox("Mode", ["Cash","UPI","Bank"])
+        next_due = st.date_input("Next Due Date")
 
         if st.button("Generate Receipt"):
 
-            remaining_after = remaining_before - payment_amount
-
-            if remaining_after < 0:
-                st.error("Payment exceeds remaining amount")
-                st.stop()
-
-            installment_no = len([p for p in payments if str(p["Student_Phone"]) == phone]) + 1
             receipt_no = generate_receipt_number()
+            installment = len([p for p in payments if str(p["Student_Phone"])==phone])+1
+            new_remaining = remaining - pay
 
             payments_sheet.append_row([
-                receipt_no,
-                student["Student_ID"],
-                phone,
+                receipt_no,student["Student_ID"],phone,
                 datetime.today().strftime("%d-%m-%Y"),
-                payment_amount,
-                payment_mode,
-                installment_no,
-                total_paid_before + payment_amount,
-                remaining_after,
-                next_due_date.strftime("%d-%m-%Y"),
+                pay,mode,installment,
+                total_paid+pay,new_remaining,
+                next_due.strftime("%d-%m-%Y"),
                 datetime.now().year
             ])
 
             pdf = generate_pdf({
                 "Receipt No": receipt_no,
                 "Student Name": student["Student_Name"],
-                "Installment No": installment_no,
-                "Paid Now": f"₹{payment_amount}",
-                "Remaining": f"₹{remaining_after}",
-                "Amount in Words": num2words(payment_amount).title() + " Rupees Only"
+                "Paid": f"₹{pay}",
+                "Remaining": f"₹{new_remaining}",
+                "Amount in Words": num2words(pay).title()+" Rupees Only"
             })
 
-            st.success("Payment Recorded Successfully")
             st.download_button("Download Receipt", pdf, f"{receipt_no}.pdf")
 
-# ===================== MONTHLY DASHBOARD =====================
+            msg = f"Hello {student['Student_Name']}, Payment ₹{pay} received. Remaining ₹{new_remaining}"
+            wa = f"https://wa.me/91{phone}?text={urllib.parse.quote(msg)}"
+            st.markdown(f"[Send Payment Confirmation WhatsApp]({wa})")
 
-elif menu == "Monthly Dashboard":
+# ================= ALL TIME DASHBOARD =================
 
-    payments = pd.DataFrame(get_payments())
+elif menu == "All-Time Dashboard":
 
-    if not payments.empty:
-        payments["Payment_Date"] = pd.to_datetime(payments["Payment_Date"], format="%d-%m-%Y")
-        payments["Month"] = payments["Payment_Date"].dt.to_period("M")
-        monthly = payments.groupby("Month")["Payment_Amount"].sum().reset_index()
-        st.line_chart(monthly.set_index("Month"))
-        st.dataframe(monthly)
+    students = get_students()
+    payments = get_payments()
+
+    report = []
+    total_pending = 0
+    total_fees_all = 0
+
+    for s in students:
+        if s["Status"]=="Active":
+
+            phone = s["Student_Phone"]
+            total_paid = sum(float(p["Payment_Amount"])
+                             for p in payments if str(p["Student_Phone"])==phone)
+
+            total_fees = float(s["Total_Fees"])
+            pending = total_fees - total_paid
+
+            total_pending += pending
+            total_fees_all += total_fees
+
+            wa_link = ""
+            if pending>0:
+                msg=f"Hello {s['Student_Name']}, Your pending fees is ₹{pending}. Kindly pay soon."
+                wa_link=f"https://wa.me/91{phone}?text={urllib.parse.quote(msg)}"
+
+            report.append({
+                "Name": s["Student_Name"],
+                "Phone": phone,
+                "Course": s["Course"],
+                "Total Fees": total_fees,
+                "Paid": total_paid,
+                "Pending": pending,
+                "WhatsApp": wa_link
+            })
+
+    st.metric("Total Fees (All Active)", f"₹{total_fees_all}")
+    st.metric("Total Pending (All Active)", f"₹{total_pending}")
+
+    df = pd.DataFrame(report)
+    st.dataframe(df)
