@@ -100,21 +100,21 @@ update_student_status()
 # ---------------- FORM ----------------
 
 if menu == "New Payment":
-st.header("New Payment Entry")
+    st.header("New Payment Entry")
 
-name = st.text_input("Student Name")
-phone = st.text_input("Student Phone")
-parent_phone = st.text_input("Parent Phone")
-address = st.text_area("Address")
-course = st.text_input("Course Name")
-duration = st.number_input("Course Duration (Months)", min_value=1)
-total_fees = st.number_input("Total Course Fees", min_value=0.0)
-payment_amount = st.number_input("Payment Amount", min_value=0.0)
-mode = st.selectbox("Payment Mode", ["Cash", "UPI", "Bank"])
+    name = st.text_input("Student Name")
+    phone = st.text_input("Student Phone")
+    parent_phone = st.text_input("Parent Phone")
+    address = st.text_area("Address")
+    course = st.text_input("Course Name")
+    duration = st.number_input("Course Duration (Months)", min_value=1)
+    total_fees = st.number_input("Total Course Fees", min_value=0.0)
+    payment_amount = st.number_input("Payment Amount", min_value=0.0)
+    mode = st.selectbox("Payment Mode", ["Cash", "UPI", "Bank"])
 
-today = datetime.today()
-payment_date = st.date_input("Payment Date", today)
-due_date = st.date_input("Next Installment Due Date", today + relativedelta(months=1))
+    today = datetime.today()
+    payment_date = st.date_input("Payment Date", today)
+    due_date = st.date_input("Next Installment Due Date", today + relativedelta(months=1))
 
 if st.button("Generate Receipt"):
 
