@@ -1,5 +1,6 @@
 import streamlit as st
 import gspread
+import qrcode
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
