@@ -53,7 +53,7 @@ sheet = client.open_by_key(st.secrets["SHEET_ID"])
 students_sheet = sheet.worksheet("Students_Master")
 payments_sheet = sheet.worksheet("Payments")
 
-# ---------------- HELPERS ----------------
+# ---------------- HELPER FUNCTIONS ----------------
 
 def generate_receipt_number():
     records = payments_sheet.get_all_records()
@@ -77,17 +77,6 @@ def get_student(phone):
 def calculate_total_paid(phone):
     records = payments_sheet.get_all_records()
     return sum(float(r["Payment_Amount"]) for r in records if str(r["Student_Phone"]) == str(phone))
-
-def update_student_status():
-    records = students_sheet.get_all_records()
-    today = datetime.today()
-    for idx, r in enumerate(records, start=2):
-        if r["Course_End_Date"]:
-            end_date = datetime.strptime(r["Course_End_Date"], "%d-%m-%Y")
-            status = "Active" if today <= end_date else "Deactive"
-            students_sheet.update_cell(idx, 13, status)
-
-update_student_status()
 
 # =====================================================
 # ================= NEW PAYMENT =======================
@@ -135,6 +124,7 @@ if menu == "New Payment":
         if not existing:
             start_date = payment_date
             end_date = start_date + relativedelta(months=duration)
+
             students_sheet.append_row([
                 f"STU-{phone[-4:]}",
                 name,
@@ -165,7 +155,8 @@ if menu == "New Payment":
             today.year
         ])
 
-        # PDF
+        # -------- PDF --------
+
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4)
         elements = []
@@ -256,9 +247,7 @@ elif menu == "All-Time Report":
     total_collection = sum(float(p["Payment_Amount"]) for p in payments)
 
     total_students = len(students)
-    active_students = len([s for s in students if s["Status"] == "Active"])
-    deactive_students = total_students - active_students
-
+    active_students = 0
     total_pending = 0
     report_data = []
 
@@ -269,13 +258,19 @@ elif menu == "All-Time Report":
         remaining = total_fees - total_paid
         total_pending += remaining
 
+        end_date = datetime.strptime(student["Course_End_Date"], "%d-%m-%Y")
+        live_status = "Active" if datetime.today() <= end_date else "Deactive"
+
+        if live_status == "Active":
+            active_students += 1
+
         report_data.append({
             "Name": student["Student_Name"],
             "Phone": phone,
             "Course": student["Course"],
             "Paid": total_paid,
             "Remaining": remaining,
-            "Status": student["Status"]
+            "Status": live_status
         })
 
     st.subheader("Dashboard Summary")
